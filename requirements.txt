@@ -1,0 +1,9 @@
+ipywidgets==7.2.1
+matplotlib==3.1.1
+l3wrapper==0.7.0
+numpy==1.16.4
+mlxtend==0.17.1
+pandas==0.24.2
+plotly==4.5.0
+python_igraph==0.8.3
+scikit_learn==0.23.2
