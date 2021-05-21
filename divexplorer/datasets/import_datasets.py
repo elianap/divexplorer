@@ -307,9 +307,6 @@ def getClassifier(type_cl, args={}):
     elif type_cl=="tree":
         from sklearn import tree
         clf = tree.DecisionTreeClassifier(random_state=42,**args)
-    elif type_cl=="l3":
-        from l3wrapper import l3wrapper
-        clf=l3wrapper.L3Classifier()
     elif type_cl=="NB":
         from sklearn.naive_bayes import MultinomialNB
         clf = MultinomialNB()
@@ -346,9 +343,6 @@ def train_predict(dfI, type_cl="RF", labelEncoding=True, validation="train", k_c
     elif type_cl=="tree":
         from sklearn import tree
         clf = tree.DecisionTreeClassifier(random_state=42,**args)
-    elif type_cl=="l3":
-        from l3wrapper import l3wrapper
-        clf=l3wrapper.L3Classifier()
     elif type_cl=="NB":
         from sklearn.naive_bayes import MultinomialNB
         clf = MultinomialNB()

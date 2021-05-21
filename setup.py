@@ -5,6 +5,8 @@ import re
 from setuptools import find_packages
 from setuptools import setup
 
+REQUIRED=['ipywidgets>=7.2.1', 'matplotlib>=3.1.1', 'numpy==1.16.4', 'mlxtend==0.17.1', 'pandas>=0.24.2','plotly>=4.5.0', 'python_igraph==0.8.3', 'scikit_learn>=0.23.2']
+
 
 def read(filename):
     filename = os.path.join(os.path.dirname(__file__), filename)
@@ -27,7 +29,7 @@ setup(
 
     packages=find_packages(exclude=('tests','notebooks')),
 
-    install_requires=[],
+    install_requires=REQUIRED,
 
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
