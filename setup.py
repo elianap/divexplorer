@@ -5,7 +5,7 @@ import re
 from setuptools import find_packages
 from setuptools import setup
 
-REQUIRED=['ipywidgets>=7.2.1', 'matplotlib>=3.1.1', 'numpy==1.16.4', 'mlxtend==0.17.1', 'pandas>=0.24.2','plotly>=4.5.0', 'python_igraph==0.8.3', 'scikit_learn>=0.23.2']
+REQUIRED=['ipywidgets>=7.2.1', 'matplotlib>=3.1.1', 'numpy>=1.16.4', 'mlxtend>=0.17.1', 'pandas>=0.24.2','plotly>=4.5.0', 'python_igraph>=0.8.3', 'scikit_learn>=0.23.2']
 
 
 def read(filename):
@@ -17,7 +17,7 @@ def read(filename):
 
 setup(
     name="divexplorer",
-    version="0.1.0",
+    version="0.1.1",
     url="https://github.com/elianap/divexplorer.git",
     license='MIT',
 
@@ -26,6 +26,7 @@ setup(
 
     description="DivExplorer",
     long_description=read("README.rst"),
+    long_description_content_type="text/x-rst",
 
     packages=find_packages(exclude=('tests','notebooks')),
 
