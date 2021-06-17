@@ -410,7 +410,8 @@ def plotComparisonShapleyValues(
     if len(title) > 1:
         ax2.set_title(f"{title[1]}")
     fig.tight_layout(pad=pad)
-    plt.title(title[1])
+    if len(title) > 1:
+        plt.title(title[1])
     ax1.tick_params(axis="y", labelsize=labelsize)
     ax2.tick_params(axis="y", labelsize=labelsize)
     if sharedAxis:

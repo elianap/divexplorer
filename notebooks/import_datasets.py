@@ -196,8 +196,9 @@ def import_process_compas(discretize=False, risk_class=False, inputDir=DATASET_D
     cols_propb=[ "c_charge_degree", "race", "age_cat", "sex", "priors_count", "days_b_screening_arrest", "two_year_recid"]#, "is_recid"] 
     cols_propb.sort()
     #df_raw[["days_b_screening_arrest"]].describe()
-    df=df_raw[cols_propb]
     #Warning
+    df=df_raw[cols_propb].copy()
+    
     df['length_of_stay'] = ((pd.to_datetime(df_raw['c_jail_out']).dt.date - pd.to_datetime(df_raw['c_jail_in']).dt.date).dt.days)
 
     df=df.loc[abs(df["days_b_screening_arrest"])<=30]#.sort_values("days_b_screening_arrest")

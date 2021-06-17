@@ -104,10 +104,11 @@ class FP_DivergenceExplorer:
         if self.class_map == {}:
             from sklearn.utils.multiclass import unique_labels
 
-            labels = unique_labels(self.y, self.y_predicted)
+            labels = np.sort(unique_labels(self.y, self.y_predicted))
             if len(labels) > 2:
                 # todo error
                 print("Binary class")
+                raise ValueError(f"Not binary problem:{len(labels)}")
             self.class_map = {"N": labels[0], "P": labels[1]}
 
     def instanceConfusionMatrix(self, df):

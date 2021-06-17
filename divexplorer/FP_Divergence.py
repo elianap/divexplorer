@@ -230,6 +230,7 @@ class FP_Divergence:
         # else:
         # plotLatticeGraph(info_lattice["lattice_graph"], info_lattice["itemset_metric"], metric=f"Metric: {self.metric}", annotation_F=True,  sizeDot=sizeDot)#, Th_divergence=0.1)
 
+    # TODO: getLower to showCorrective
     def plotLatticeItemset(
         self,
         itemset,
