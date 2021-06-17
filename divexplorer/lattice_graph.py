@@ -315,7 +315,7 @@ def plotLatticeGraph_colorGroups_v1(
     different_colors_group,
     metric="",
     annotation_F=True,
-    sizeDot="",
+    sizeDot="small",
     color_map={},
     useMarker=True,
     show=False,
