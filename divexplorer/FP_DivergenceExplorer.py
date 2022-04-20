@@ -8,10 +8,7 @@ from mlxtend.frequent_patterns import fpcommon as fpc
 
 from .utils_FPgrowth import fpgrowth_cm
 
-# from .import_datasets import *
-# from .utils_metrics_FPx import *
 
-# from utils_significance import *
 map_beta_distribution = {
     "d_fpr": {"T": ["fp"], "F": ["tn"]},
     "d_fnr": {"T": ["fn"], "F": ["tp"]},
@@ -30,7 +27,11 @@ map_beta_distribution = {
     "d_for": {"T": ["fn"], "F": ["tn"]},
 }
 
-VIZ_COL_NAME = "viz"
+
+OUTCOME = "outcome"
+CLASSIFICATION = "classification"
+D_OUTCOME = "d_outcome"
+AVG_OUTCOME = "outcome"
 
 
 def oneHotEncoding(dfI):
@@ -45,8 +46,10 @@ def _compute_t_test(df, col_mean, col_var, mean_d, var_d):
     return (abs(df[col_mean] - mean_d)) / ((df[col_var] + var_d) ** 0.5)
 
 
-# def _compute_std_beta_distribution(FPb):
-#    return ((FPb.a*FPb.b)/((FPb.a+FPb.b)**2*(FPb.a+FPb.b+1)))**(1/2)
+def _compute_t_test_welch(df, col_mean, col_var, col_size, mean_d, var_d, size_d):
+    return (abs(df[col_mean] - mean_d)) / (
+        (df[col_var] / df[col_size] + var_d / size_d) ** 0.5
+    )
 
 
 def _compute_variance_beta_distribution(FPb):
@@ -57,59 +60,100 @@ def _compute_mean_beta_distribution(FPb):
     return FPb.a / (FPb.a + FPb.b)
 
 
+def check_target_inputs(class_name, pred_name, target_name):
+    if target_name is None and (class_name is None and pred_name is None):
+        raise ValueError("Specify the target column(s)")
+    if target_name is not None and (class_name is not None or pred_name is not None):
+        raise ValueError(
+            "Specify only a type of target: target_name if outcome target or class_name and/or pred_name for classification targets"
+        )
+
+
+def define_target(true_class_name, predicted_class_name, target_name):
+    if (true_class_name is not None) or (predicted_class_name is not None):
+        return CLASSIFICATION
+    elif target_name is not None:
+        return OUTCOME
+    else:
+        # Remove, never raised if we check before the input
+        raise ValueError("None specified")
+
+def check_single_classification_target(true_class_name, predicted_class_name):
+    if (true_class_name is None) or (predicted_class_name is None):
+        return True
+
 class FP_DivergenceExplorer:
     def __init__(
         self,
         X_discrete,
-        true_class_name,
+        target_name=None,
+        true_class_name=None,
         predicted_class_name=None,
         class_map={},
         ignore_cols=[],
-        log_loss_values=None,
-        clf=None,
-        dataset_name="",
-        type_cl="",
+        is_one_hot_encoding=False,
+        dataset_name="",  # TODO remove
     ):
         # TODO now function in import dataset
-        cols = (
-            [true_class_name, predicted_class_name] + ignore_cols
-            if predicted_class_name is not None
-            else [true_class_name] + ignore_cols
-        )
-        self.X = oneHotEncoding(X_discrete.drop(columns=cols))
-        self.y = X_discrete[[true_class_name]].copy()
+        check_target_inputs(true_class_name, predicted_class_name, target_name)
 
-        self.y_predicted = (
-            X_discrete[predicted_class_name].copy().values
-            if predicted_class_name is not None
-            else X_discrete[true_class_name].copy().values
+        self.target_type = define_target(
+            true_class_name, predicted_class_name, target_name
         )
 
-        self.log_loss_values = log_loss_values
+        if self.target_type == CLASSIFICATION:
 
-        self.dataset_name = dataset_name
-        self.clf = clf
-        self.dataset_name = dataset_name
-        self.type_cl = type_cl
+            if check_single_classification_target(true_class_name, predicted_class_name):
+                if true_class_name is not None:
+                    single_target_class = true_class_name
+                else:
+                    single_target_class = predicted_class_name
+                cols = [single_target_class]  + ignore_cols
+            else:
+                cols = [true_class_name, predicted_class_name] + ignore_cols
+                single_target_class = None
+                
+            if single_target_class is None:
+                self.y = X_discrete[[true_class_name]].copy()
+                self.y_predicted =  X_discrete[predicted_class_name].copy().values
+                
+            else:
+                self.y = X_discrete[[single_target_class]].copy()
+                self.y_predicted = X_discrete[[single_target_class]].copy().values
 
-        self.FP_metric_support = {}
+            self.y_true_pred = None
+            self.y_true_pred = self.y.copy()
+            self.y_true_pred.columns = ["true_class"]  # TODO class1?
+            self.y_true_pred = self.y_true_pred.assign(predicted=self.y_predicted)
 
-        self.y_true_pred = None
-        self.y_true_pred = self.y.copy()
-        self.y_true_pred.columns = ["true_class"]  # TODO class1?
-        self.y_true_pred = self.y_true_pred.assign(predicted=self.y_predicted)
-        # self.y_true_pred=self.y_true_pred.rename(columns={"class": "true_class"})
+            self.class_map = class_map
+            if self.class_map == {}:
+                from sklearn.utils.multiclass import unique_labels
 
-        self.class_map = class_map
-        if self.class_map == {}:
-            from sklearn.utils.multiclass import unique_labels
+                labels = np.sort(unique_labels(self.y, self.y_predicted))
+                if len(labels) > 2:
+                    # todo error
+                    print("Binary class")
+                    raise ValueError(f"Not binary problem:{len(labels)}")
+                self.class_map = {"N": labels[0], "P": labels[1]}
+        else:
+            # TODO - ADD MULTIPLE TARGETS --> TARGET COLUMNS
+            cols = [target_name] + ignore_cols
+            from copy import deepcopy
 
-            labels = np.sort(unique_labels(self.y, self.y_predicted))
-            if len(labels) > 2:
-                # todo error
-                print("Binary class")
-                raise ValueError(f"Not binary problem:{len(labels)}")
-            self.class_map = {"N": labels[0], "P": labels[1]}
+            self.target_col_name = target_name
+            self.target_squared_col_name = f"{target_name}_squared"
+            self.target_scores_df = deepcopy(X_discrete[[target_name]])
+            self.target_scores_df[self.target_squared_col_name] = (
+                X_discrete[target_name] ** 2
+            )
+
+            self.support_count_col = "support_count"
+
+        if is_one_hot_encoding:
+            self.X = X_discrete.drop(columns=cols)
+        else:
+            self.X = oneHotEncoding(X_discrete.drop(columns=cols))
 
     def instanceConfusionMatrix(self, df):
         # TODO
@@ -321,153 +365,6 @@ class FP_DivergenceExplorer:
 
         return res_df
 
-    def computeDivergenceItemsets(
-        self,
-        fm_df,
-        metrics=["d_fpr", "d_fnr", "d_accuracy"],
-        cols_orderTP=["tn", "fp", "fn", "tp"],
-    ):
-
-        # TODO - REFACTOR CODE
-
-        if "d_fpr" in metrics:
-            from .utils_metrics_FPx import fpr_df
-
-            fm_df["fpr"] = fpr_df(fm_df[cols_orderTP])
-
-        if "d_fnr" in metrics:
-            from .utils_metrics_FPx import fnr_df
-
-            fm_df["fnr"] = fnr_df(fm_df[cols_orderTP])
-
-        if "d_accuracy" in metrics:
-            from .utils_metrics_FPx import accuracy_df
-
-            fm_df["accuracy"] = accuracy_df(fm_df[cols_orderTP])
-
-        if "d_error" in metrics:
-            from .utils_metrics_FPx import classification_error_df
-
-            fm_df["error"] = classification_error_df(fm_df[cols_orderTP])
-
-        if "d_ppv" in metrics:
-            from .utils_metrics_FPx import positive_predicted_value_df
-
-            fm_df["ppv"] = positive_predicted_value_df(fm_df[cols_orderTP])
-
-        if "d_tpr" in metrics:
-            from .utils_metrics_FPx import true_positive_rate_df
-
-            fm_df["tpr"] = true_positive_rate_df(fm_df[cols_orderTP])
-
-        if "d_tnr" in metrics:
-            from .utils_metrics_FPx import true_negative_rate_df
-
-            fm_df["tnr"] = true_negative_rate_df(fm_df[cols_orderTP])
-
-        if "d_npv" in metrics:
-            from .utils_metrics_FPx import negative_predicted_value_df
-
-            fm_df["npv"] = negative_predicted_value_df(fm_df[cols_orderTP])
-
-        if "d_fdr" in metrics:
-            from .utils_metrics_FPx import false_discovery_rate_df
-
-            fm_df["fdr"] = false_discovery_rate_df(fm_df[cols_orderTP])
-
-        if "d_for" in metrics:
-            from .utils_metrics_FPx import false_omission_rate_df
-
-            fm_df["for"] = false_omission_rate_df(fm_df[cols_orderTP])
-
-        if "d_posr" in metrics:
-            # TODO
-            from .utils_metrics_FPx import getInfoRoot
-
-            rootIndex = getInfoRoot(fm_df).index
-            from .utils_metrics_FPx import get_pos, posr_df
-
-            fm_df["P"] = get_pos(fm_df[cols_orderTP])
-            fm_df["posr"] = posr_df(fm_df[cols_orderTP])
-            fm_df["d_posr"] = fm_df["posr"] - fm_df.loc[rootIndex]["posr"].values[0]
-        if "d_negr" in metrics:
-            # TODO
-            from .utils_metrics_FPx import getInfoRoot
-
-            rootIndex = getInfoRoot(fm_df).index
-            from .utils_metrics_FPx import get_neg, negr_df
-
-            fm_df["N"] = get_neg(fm_df[cols_orderTP])
-            fm_df["negr"] = negr_df(fm_df[cols_orderTP])
-            fm_df["d_negr"] = fm_df["negr"] - fm_df.loc[rootIndex]["negr"].values[0]
-
-        from .utils_metrics_FPx import getInfoRoot
-
-        infoRoot = getInfoRoot(fm_df)
-
-        if "d_fnr" in metrics:
-            fm_df["d_fnr"] = fm_df["fnr"] - infoRoot["fnr"].values[0]
-        if "d_fpr" in metrics:
-            fm_df["d_fpr"] = fm_df["fpr"] - infoRoot["fpr"].values[0]
-        if "d_accuracy" in metrics:
-            fm_df["d_accuracy"] = fm_df["accuracy"] - infoRoot["accuracy"].values[0]
-
-        # Classification error
-        if "d_error" in metrics:
-            fm_df["d_error"] = fm_df["error"] - infoRoot["error"].values[0]
-
-        # Precision or positive predictive value (PPV)
-        if "d_ppv" in metrics:
-            fm_df["d_ppv"] = fm_df["ppv"] - infoRoot["ppv"].values[0]
-
-        if "d_tpr" in metrics:
-            fm_df["d_tpr"] = fm_df["tpr"] - infoRoot["tpr"].values[0]
-        if "d_tnr" in metrics:
-            fm_df["d_tnr"] = fm_df["tnr"] - infoRoot["tnr"].values[0]
-        if "d_npv" in metrics:
-            fm_df["d_npv"] = fm_df["npv"] - infoRoot["npv"].values[0]
-        if "d_fdr" in metrics:
-            fm_df["d_fdr"] = fm_df["fdr"] - infoRoot["fdr"].values[0]
-        if "d_for" in metrics:
-            fm_df["d_for"] = fm_df["for"] - infoRoot["for"].values[0]
-
-        ####### TO BE REMOVED IF NOT NECESSARY #########
-        if "d_fnr_abs" in metrics:
-            fm_df["d_fnr_abs"] = abs(fm_df["fnr"] - infoRoot["fnr"].values[0])
-        if "d_fpr_abs" in metrics:
-            fm_df["d_fpr_abs"] = abs(fm_df["fpr"] - infoRoot["fpr"].values[0])
-        if "d_accuracy_abs" in metrics:
-            fm_df["d_accuracy_abs"] = abs(
-                fm_df["accuracy"] - infoRoot["accuracy"].values[0]
-            )
-
-        if "ACsf" in metrics:
-            from .utils_metrics_FPx import AccuracySubgroupFairness
-
-            fm_df = AccuracySubgroupFairness(fm_df)
-        if "SPsf" in metrics:
-            from .utils_metrics_FPx import statParitySubgroupFairness
-
-            fm_df = statParitySubgroupFairness(fm_df)
-        if "FPsf" in metrics:
-            from .utils_metrics_FPx import FPSubgroupFairness
-
-            fm_df = FPSubgroupFairness(fm_df)
-        if "FNsf" in metrics:
-            from .utils_metrics_FPx import FNSubgroupFairness
-
-            fm_df = FNSubgroupFairness(fm_df)
-
-        if "d_fnr_w" in metrics:
-            alfaFN = (fm_df["tp"] + fm_df["fn"]) / infoRoot["support_count"].values[0]
-            fm_df["d_fnr_w"] = alfaFN * fm_df["d_fnr"]
-        if "d_fpr_w" in metrics:
-            alfaFP = (fm_df["tn"] + fm_df["fp"]) / infoRoot["support_count"].values[0]
-            fm_df["d_fpr_w"] = alfaFP * fm_df["d_fpr"]
-        if "d_accuracy_w" in metrics:
-            fm_df["d_accuracy_w"] = fm_df["support"] * fm_df["d_accuracy"]
-        return fm_df
-
     def fpgrowth_divergence_metrics(
         self,
         df,
@@ -478,6 +375,7 @@ class FP_DivergenceExplorer:
         cols_orderTP=["tn", "fp", "fn", "tp"],
         sortedV="support",
     ):
+
         fp = fpgrowth_cm(
             df,
             df_confusion_matrix,
@@ -487,14 +385,12 @@ class FP_DivergenceExplorer:
         )
         row_root = dict(df_confusion_matrix.sum())
         row_root.update({"support": 1, "itemsets": frozenset()})
-        fp = fp.append(row_root, ignore_index=True)
+        fp.loc[len(fp), row_root.keys()] = row_root.values()
+        #fp = fp.append(row_root, ignore_index=True)
         fp["length"] = fp["itemsets"].str.len()
 
         fp["support_count"] = (fp["support"] * len(df)).round()
 
-        # fp["fpr"]=fpr_df(fp[cols_orderTP])
-        # fp["fnr"]=fnr_df(fp[cols_orderTP])
-        # fp["accuracy"]=accuracy_df(fp[cols_orderTP])
         fp.sort_values(sortedV, ascending=False, inplace=True)
         fp = fp.reset_index(drop=True)
         return fp
@@ -505,75 +401,173 @@ class FP_DivergenceExplorer:
         sortedV="support",
         metrics=["d_fpr", "d_fnr", "d_accuracy"],
         FPM_type="fpgrowth",
-        viz_col=False,
     ):
 
-        if (
-            min_support in self.FP_metric_support
-            and "FM" in self.FP_metric_support[min_support]
-        ):
-            return self.FP_metric_support[min_support]["FM"]
+        if FPM_type not in ["fpgrowth", "apriori"]:
+            raise ValueError(
+                f'{FPM_type} algorithm is not handled. For now, we integrate the DivExplorer computation in "fpgrowth" and "apriori" algorithms.'
+            )
 
-        y_conf_matrix = self.instanceConfusionMatrix(self.y_true_pred)
+        # TODO Anticipate it?
+        if self.target_type == CLASSIFICATION:
+            y_conf_matrix = self.instanceConfusionMatrix(self.y_true_pred)
+            conf_matrix_cols = ["tn", "fp", "fn", "tp"]
 
         if FPM_type == "fpgrowth":
-            conf_matrix_cols = ["tn", "fp", "fn", "tp"]
+
+            if self.target_type == CLASSIFICATION:
+                input_data_targets = y_conf_matrix[conf_matrix_cols]
+                cols_orderTP = conf_matrix_cols
+            else:
+                input_data_targets = self.target_scores_df
+                cols_orderTP = [self.target_col_name, self.target_squared_col_name]
+
             df_FP_metrics = self.fpgrowth_divergence_metrics(
                 self.X.copy(),
-                y_conf_matrix[conf_matrix_cols],
+                input_data_targets,
                 min_support=min_support,
                 use_colnames=True,
                 sortedV=sortedV,
+                cols_orderTP=cols_orderTP,
             )
         else:
-            conf_matrix_cols = ["tp", "fp", "fn", "tn"]
-            attributes_one_hot = self.X.columns
-            df_with_conf_matrix = pd.concat(
-                [self.X, y_conf_matrix[conf_matrix_cols]], axis=1
-            )
+            if self.target_type == CLASSIFICATION:
+
+                attributes_one_hot = self.X.columns
+                df_with_conf_matrix = pd.concat(
+                    [self.X, y_conf_matrix[conf_matrix_cols]], axis=1
+                )
+                input_data_X = df_with_conf_matrix[attributes_one_hot]
+                input_data_targets = df_with_conf_matrix
+            else:
+                raise ValueError(
+                    "The apriori implementation is available only for classification purposes."
+                )
+                input_data_X = self.X.copy()
+                input_data_targets = self.target_scores_df
+
             df_FP_metrics = self.apriori_divergence(
-                df_with_conf_matrix[attributes_one_hot],
-                df_with_conf_matrix,
+                input_data_X,
+                input_data_targets,
                 min_support=min_support,
                 use_colnames=True,
                 sortedV=sortedV,
             )
+
         df_FP_divergence = self.computeDivergenceItemsets(
             df_FP_metrics, metrics=metrics
         )
 
-        if min_support not in self.FP_metric_support:
-            self.FP_metric_support[min_support] = {}
-
-        if viz_col:
-            df_FP_divergence[VIZ_COL_NAME] = True
-        self.FP_metric_support[min_support]["FM"] = df_FP_divergence
-
         # T_test values
-        self.t_test_FP(min_support, metrics=metrics)
-
+        if self.target_type == CLASSIFICATION:
+            df_FP_divergence = self.t_test_FP(df_FP_divergence, metrics=metrics)
+        else:
+            df_FP_divergence = self.statistical_significance_outcome(
+                df_FP_divergence, AVG_OUTCOME, self.target_squared_col_name
+            )
+            # Drop the sum (avg = sum / support_count)
+            df_FP_divergence.drop(
+                columns=[self.target_col_name],
+                inplace=True,
+            )
         return df_FP_divergence
 
-    def mean_var_beta_distribution(self, metric, min_support):
-        FPb = self.FP_metric_support[min_support]["FM"]
-        cl_metric = map_beta_distribution[metric]
-        FPb["a"] = 1 + FPb[cl_metric["T"]].sum(axis=1)
-        FPb["b"] = 1 + FPb[cl_metric["F"]].sum(axis=1)
-        cl_metric = "_".join(cl_metric["T"])
-        FPb[f"mean_beta_{cl_metric}"] = _compute_mean_beta_distribution(FPb[["a", "b"]])
-        FPb[f"var_beta_{cl_metric}"] = _compute_variance_beta_distribution(
-            FPb[["a", "b"]]
+    def computeDivergenceItemsets(
+        self,
+        fm_df,
+        metrics=["d_fpr", "d_fnr", "d_accuracy"],
+        cols_orderTP=["tn", "fp", "fn", "tp"],
+    ):
+        from .utils_metrics_FPx import (
+            fpr_df,
+            fnr_df,
+            accuracy_df,
+            classification_error_df,
+            true_positive_rate_df,
+            true_negative_rate_df,
         )
-        FPb.drop(columns=["a", "b"], inplace=True)
-        return FPb
 
-    def t_test_FP(self, min_support, metrics=["d_fpr", "d_fnr", "d_accuracy"]):
+        name_funct = {
+            "fpr": fpr_df,
+            "fnr": fnr_df,
+            "accuracy": accuracy_df,
+            "error": classification_error_df,
+            "tpr": true_positive_rate_df,
+            "tnr": true_negative_rate_df,
+        }
+
+        # "ppv": positive_predicted_value_df
+        # # "npv" : negative_predicted_value_df
+        # "fdr" : false_discovery_rate_df
+        # "for" : false_omission_rate_df
+
+        # TODO - REFACTOR CODE
+        if D_OUTCOME in metrics:
+            cols_orderTP = [self.target_col_name, self.target_squared_col_name]
+            from .utils_metrics_FPx import averageScore
+
+            fm_df[AVG_OUTCOME] = averageScore(
+                fm_df[cols_orderTP + [self.support_count_col]],
+                self.target_col_name,
+                self.support_count_col,
+            )
+            from .utils_metrics_FPx import getInfoRoot
+
+            infoRoot = getInfoRoot(fm_df)
+
+            fm_df[D_OUTCOME] = fm_df[AVG_OUTCOME] - infoRoot[AVG_OUTCOME].values[0]
+
+        else:
+
+            from .utils_metrics_FPx import getInfoRoot
+
+            rootIndex = getInfoRoot(fm_df).index
+
+            for d_metric in metrics:
+                metric = d_metric[2:]
+                if d_metric == "d_posr":
+                    # TODO
+                    from .utils_metrics_FPx import get_pos, posr_df
+
+                    fm_df["P"] = get_pos(fm_df[cols_orderTP])
+                    fm_df[metric] = posr_df(fm_df[cols_orderTP])
+
+                elif d_metric == "d_negr":
+                    # TODO
+                    from .utils_metrics_FPx import get_neg, negr_df
+
+                    fm_df["N"] = get_neg(fm_df[cols_orderTP])
+                    fm_df[metric] = negr_df(fm_df[cols_orderTP])
+
+                else:
+                    fm_df[metric] = name_funct[metric](fm_df[cols_orderTP])
+
+                fm_df[d_metric] = fm_df[metric] - fm_df.loc[rootIndex][metric].values[0]
+
+        return fm_df
+
+    def mean_var_beta_distribution(self, FP_df, metric):
+
+        cl_metric = map_beta_distribution[metric]
+        FP_df["a"] = 1 + FP_df[cl_metric["T"]].sum(axis=1)
+        FP_df["b"] = 1 + FP_df[cl_metric["F"]].sum(axis=1)
+        cl_metric = "_".join(cl_metric["T"])
+        FP_df[f"mean_beta_{cl_metric}"] = _compute_mean_beta_distribution(
+            FP_df[["a", "b"]]
+        )
+        FP_df[f"var_beta_{cl_metric}"] = _compute_variance_beta_distribution(
+            FP_df[["a", "b"]]
+        )
+        FP_df.drop(columns=["a", "b"], inplace=True)
+        return FP_df
+
+    def t_test_FP(self, FP_df, metrics=["d_fpr", "d_fnr", "d_accuracy"]):
         for metric in metrics:
             if metric not in map_beta_distribution:
                 raise ValueError(f"{metric} not in {map_beta_distribution.keys()}")
 
             c_metric = "_".join(map_beta_distribution[metric]["T"])
-            FPb = self.mean_var_beta_distribution(metric, min_support)
+            FPb = self.mean_var_beta_distribution(FP_df, metric)
 
             mean_col, var_col = f"mean_beta_{c_metric}", f"var_beta_{c_metric}"
             mean_d, var_d = FPb.loc[FPb.itemsets == frozenset()][
@@ -585,5 +579,38 @@ class FP_DivergenceExplorer:
             FPb.drop(
                 columns=[f"mean_beta_{c_metric}", f"var_beta_{c_metric}"], inplace=True
             )
-            self.FP_metric_support[min_support]["FM"] = FPb
         return FPb
+
+    def statistical_significance_outcome(
+        self, fm_df, mean_col, squared_col, type_test="welch"
+    ):
+
+        fm_df["var"] = (
+            fm_df[squared_col] / fm_df[self.support_count_col] - fm_df[mean_col] ** 2
+        )
+
+        from .utils_metrics_FPx import getInfoRoot
+
+        _infoRoot_dict = getInfoRoot(fm_df).T.to_dict()
+        if len(_infoRoot_dict) != 1:
+            raise ValueError("Multiple roots")
+        infoRoot_dict = _infoRoot_dict[list(_infoRoot_dict.keys())[0]]
+        if type_test == "welch":
+            fm_df[f"t_value_{mean_col}"] = _compute_t_test_welch(
+                fm_df,
+                mean_col,
+                "var",
+                self.support_count_col,
+                infoRoot_dict[mean_col],
+                infoRoot_dict["var"],
+                infoRoot_dict[self.support_count_col],
+            )
+        else:
+            fm_df[f"t_value_{mean_col}"] = _compute_t_test(
+                fm_df, mean_col, "var", infoRoot_dict[mean_col], infoRoot_dict["var"]
+            )
+        fm_df.drop(
+            columns=["var", squared_col],
+            inplace=True,
+        )
+        return fm_df

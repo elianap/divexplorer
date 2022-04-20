@@ -41,8 +41,7 @@ def abbreviateDict(d, abbreviations):
     }
 
 
-# freq_metrics.loc[freq_metrics.length==1][["itemsets", "support"]].set_index("itemsets")["support"].to_dict()
-
+from distutils.log import warn
 from .shapley_value_FPx import (
     shapley_subset,
     computeShapleyItemset,
@@ -52,10 +51,7 @@ from .shapley_value_FPx import (
 from .lattice_graph import (
     getLatticeItemsetMetric,
     plotLatticeGraph_colorGroups,
-    plotLatticeGraph_colorGroups_v1,
 )
-
-# from .utils_significance import *
 
 
 i_col = "item i"
@@ -80,8 +76,6 @@ map_beta_distribution = {
     "d_accuracy_abs": {"T": ["tp", "tn"], "F": ["fp", "fn"]},
     "d_posr": {"T": ["tp", "fn"], "F": ["tn", "fp"]},
     "d_negr": {"T": ["tn", "fp"], "F": ["tp", "fn"]},
-    # "d_classiferror": {"T": ["tp", "tn"], "F": ["fp", "fn"]},
-    # "d_classiferror_abs": {"T": ["tp", "tn"], "F": ["fp", "fn"]},
     "d_error": {"T": ["fp", "fn"], "F": ["tp", "tn"]},
     "d_ppv": {"T": ["tp"], "F": ["fp"]},
     "d_tpr": {"T": ["tp"], "F": ["fn"]},
@@ -117,6 +111,8 @@ p_name = "I"
 # Name for diverge in the paper
 div_name = "Δ"
 
+D_OUTCOME = "d_outcome"
+AVG_OUTCOME = "outcome"
 
 class FP_Divergence:
     def __init__(self, freq_metrics, metric):
@@ -164,71 +160,6 @@ class FP_Divergence:
             .set_index("itemsets")
             .to_dict()[self.t_value_col]
         )
-
-    def plotLatticeItemset_v1(
-        self,
-        itemset,
-        sizeDot="",
-        Th_divergence=None,
-        getLower=False,
-        getAllGreaterTh=False,
-        useMarker=True,
-        show=False,
-    ):
-        nameTitle = f"Metric: {self.metric}"
-        info_lattice = getLatticeItemsetMetric(
-            itemset, self.itemset_divergence, getLower=getLower
-        )
-        color_groups = {}
-        nodes = info_lattice["itemset_metric"]
-        # Save info node - parent source
-        # node_sources={}
-        if Th_divergence is not None:
-            nameTitle = f"{nameTitle} - Threshold: {Th_divergence}"
-            color_groups["greater"] = [
-                k for k, v in nodes.items() if abs(v) >= Th_divergence
-            ]
-        if getLower:
-            nameTitle = f"{nameTitle} - show lower"
-            color_groups["lower"] = info_lattice["lower"]
-        if getAllGreaterTh and Th_divergence is not None:
-            color_groups["all_greater"] = []
-            for node in [
-                k for k, v in nodes.items() if abs(v) >= Th_divergence
-            ]:  # color_groups["greater"]:
-                if [p for p in color_groups["all_greater"] if p.issubset(node)] == []:
-                    if [
-                        k
-                        for k, v in nodes.items()
-                        if abs(v) < Th_divergence and node.issubset(k)
-                    ] == []:
-                        color_groups["all_greater"].append(node)
-                # Save info node - parent source
-                # else:
-                # node_sources[node]=[p for p in color_groups["all_greater"] if p.issubset(node)]
-        color_groups["normal"] = list(
-            set(nodes) - set([v for v1 in color_groups.values() for v in v1])
-        )
-        color_map = {
-            "normal": "#6175c1",
-            "lower": "lightblue",
-            "greater": "#ff6666",
-            "all_greater": "#580023",
-        }
-
-        return plotLatticeGraph_colorGroups_v1(
-            info_lattice["lattice_graph"],
-            info_lattice["itemset_metric"],
-            color_groups,
-            annotation_F=True,
-            metric=nameTitle,
-            sizeDot=sizeDot,
-            color_map=color_map,
-            useMarker=useMarker,
-            show=show,
-        )
-        # else:
-        # plotLatticeGraph(info_lattice["lattice_graph"], info_lattice["itemset_metric"], metric=f"Metric: {self.metric}", annotation_F=True,  sizeDot=sizeDot)#, Th_divergence=0.1)
 
     # TODO: getLower to showCorrective
     def plotLatticeItemset(
@@ -477,14 +408,6 @@ class FP_Divergence:
             )
         return sortedDF
 
-    def getIndexesRedundancySummarization(self, th_redundancy=None):
-        df_red_summary = (
-            self.freq_metrics
-            if th_redundancy is None
-            else self.getDivergenceMetricNotRedundant(th_redundancy=th_redundancy)
-        )
-        return list(df_red_summary.index)
-
     def getFMetricSortedTopK(self, K, th_redundancy=None, absF=False):
         sortedDF = self.getDivergence(th_redundancy=th_redundancy, absF=absF)
         return sortedDF.head(K)
@@ -536,23 +459,26 @@ class FP_Divergence:
         title=None,
         abbreviations={},
         xlabel=False,
+        show_figure=True
     ):
         import matplotlib.pyplot as plt
 
+        fig, ax = plt.subplots(1, 1, figsize=sizeFig, dpi=100)
+
         if shapley_values is None and itemset is None:
             # todo
-            print("Error")
-            return -1
+            raise ValueError("Specify the itemset or the precomputed Shapley values (dict)")
+
         if shapley_values is None and itemset:
             shapley_values = self.computeShapleyValue(itemset)
-        # plt.gcf().set_size_inches(20, 10)
+
         if abbreviations:
             shapley_values = abbreviateDict(shapley_values, abbreviations)
         sh_plt = {str(",".join(list(k))): v for k, v in shapley_values.items()}
         metric = f"{div_name}_{{{self.metric_name}}}" if metric is None else metric
         if sortedF:
             sh_plt = {k: v for k, v in sorted(sh_plt.items(), key=lambda item: item[1])}
-        plt.barh(
+        ax.barh(
             range(len(sh_plt)),
             sh_plt.values(),
             height=height,
@@ -561,17 +487,21 @@ class FP_Divergence:
             linewidth=linewidth,
             edgecolor="#0C4A5B",
         )
-        plt.yticks(range(len(sh_plt)), list(sh_plt.keys()), fontsize=labelsize)
-        plt.xticks(fontsize=labelsize)
+        ax.set_yticks(range(len(sh_plt)), minor=False)
+        ax.set_yticklabels(list(sh_plt.keys()), minor=False)
+        ax.tick_params(axis="y", labelsize=labelsize)
+
         if xlabel:
-            plt.xlabel(
-                f"${div_name}({i_name}|{p_name})$", size=labelsize
-            )  # - Divergence contribution
-        # title="Divergence" if title is None else title
+            ax.set_xlabel(f"${div_name}({i_name}|{p_name})$", size=labelsize)
+             # - Divergence contribution
+        
+        
         title = "" if title is None else title
         title = f"{title} ${metric}$" if metric != "" else title  # Divergence
-        plt.title(title, fontsize=titlesize)
-        plt.rcParams["figure.figsize"], plt.rcParams["figure.dpi"] = sizeFig, 100
+
+
+        ax.set_title(title, fontsize=titlesize)
+
         if saveFig:
             nameFig = "./shap.pdf" if nameFig is None else nameFig
             # plt.savefig(f"{nameFig}", bbox_inches="tight", pad=0.05)
@@ -584,7 +514,9 @@ class FP_Divergence:
                 facecolor="white",
                 transparent=False,
             )
-        plt.show()
+        if show_figure:
+            plt.show()
+            plt.close()
 
     def computeGlobalShapleyValue(self):
         # TODO square
@@ -837,10 +769,17 @@ class FP_Divergence:
             FPb.drop(columns=cols_beta, inplace=True)
             return FPb, self.t_value_col
 
+
+
+
     def correctiveTvalues(self):
         # Get-T-Values
-        d_tt = self.getTvalues()
+        
         corrOfI = self.getCorrectiveItemsDf().copy()
+        corrOfI["corr_factor"] = abs(corrOfI["v_S"]) - abs(corrOfI["v_S+i"])
+
+        if self.metric == D_OUTCOME:
+            return corrOfI       
         itemsetsOfI = corrOfI[["S", "S+i"]]
         itemsetsOfI = list(set(itemsetsOfI["S"].values)) + list(set(itemsetsOfI["S+i"]))
         df = self.freq_metrics.loc[self.freq_metrics.itemsets.isin(itemsetsOfI)].copy()
@@ -853,15 +792,28 @@ class FP_Divergence:
         corrOfI[f"t_value_corr"] = (
             abs(corrOfI[f"mean_beta_{m}_S"] - corrOfI[f"mean_beta_{m}_S+i"])
         ) / ((corrOfI[f"var_beta_{m}_S"] + corrOfI[f"var_beta_{m}_S+i"]) ** 0.5)
-        corrOfI[f"t_value_S+i"] = corrOfI["S+i"].apply(lambda x: d_tt[x])
-        corrOfI["corr_factor"] = abs(corrOfI["v_S"]) - abs(corrOfI["v_S+i"])
+        #d_tt = self.getTvalues()
+        #corrOfI[f"t_value_S+i"] = corrOfI["S+i"].apply(lambda x: d_tt[x])
+        
         return corrOfI
 
     # Old getSignificant
     def getCorrectiveItems(self):
-        if self.corrSignif is not None:
-            return self.corrSignif
+        #if self.corrSignif is not None:
+        #    return self.corrSignif
         corrDf = self.correctiveTvalues()
+        if self.metric == D_OUTCOME:
+            import warnings
+            warnings.warn("All corrective items are returned. Statistical significance to be computed.")
+            return corrDf[[
+            "item i",
+            "S",
+            "S+i",
+            "v_i",
+            "v_S",
+            "v_S+i",
+            "corr_factor",
+            ]]
         colsOfI = [
             "item i",
             "S",

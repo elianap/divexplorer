@@ -1,20 +1,8 @@
 import numpy as np
 
-"""
 
-def tpr_df(df_cm):
-    return df_cm["tp"]/(df_cm["tp"]+df_cm["fn"])
-
-def fpr_df(df_cm):
-    return df_cm["fp"]/(df_cm["fp"]+df_cm["tn"])
-
-def fnr_df(df_cm):
-    return df_cm["fn"]/(df_cm["tp"]+df_cm["fn"])
-
-def tnr_df(df_cm):
-    return df_cm["tn"]/(df_cm["fp"]+df_cm["tn"])
-
-"""
+def averageScore(df_score_res, score_col, count_col):
+    return (df_score_res[score_col] / (df_score_res[count_col])).fillna(0)
 
 
 def tpr_df(df_cm):
@@ -95,7 +83,7 @@ def get_neg(df_cm):
     return df_cm["tn"] + df_cm["fp"]
 
 
-def getInfoRoot(df, orient=None):
+def getInfoRoot(df):
     return df.loc[df["itemsets"] == frozenset()]
 
 

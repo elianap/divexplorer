@@ -20,7 +20,7 @@ def printable(df_print, cols=["itemsets"], abbreviations={}, n_rows=3, decimals=
         df_print[t_v] = df_print[t_v].round(1)
     df_print = df_print.round(r2)
     df_print.rename(columns={"support": "sup"}, inplace=True)
-    df_print.columns = df_print.columns.str.replace("d_*", f"{div_name}_")
+    df_print.columns = df_print.columns.str.replace("d_*", f"{div_name}_", regex=False)
     df_print.columns = df_print.columns.str.replace("t_value", "t")
     for c in cols:
         df_print[c] = df_print[c].apply(lambda x: sortItemset(x, abbreviations))

@@ -374,7 +374,7 @@ def train_predict(dfI, type_cl="RF", labelEncoding=True, validation="train", k_c
         from sklearn.model_selection import cross_val_predict
         if fold=="stratified":
             from sklearn.model_selection import StratifiedKFold
-            cv = StratifiedKFold(n_splits=k_cv, random_state=42)        #Aggiunto per fissare il random state
+            cv = StratifiedKFold(n_splits=k_cv, random_state=42, shuffle=True)        #Aggiunto per fissare il random state
         else:
             from sklearn.model_selection import KFold
             cv = KFold(n_splits=k_cv, random_state=42)        #Aggiunto per fissare il random state   

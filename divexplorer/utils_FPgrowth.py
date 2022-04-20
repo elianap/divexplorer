@@ -4,15 +4,18 @@ import collections
 from distutils.version import LooseVersion as Version
 from pandas import __version__ as pandas_version
 
+
 def filterColumns(df_filter, cols):
-    return df_filter[(df_filter[df_filter.columns[list(cols)]]>0).all(1)]
+    return df_filter[(df_filter[df_filter.columns[list(cols)]] > 0).all(1)]
+
 
 def sum_values(_x):
-    out = (np.sum(_x, axis=0))
+    out = np.sum(_x, axis=0)
     return np.array(out).reshape(-1)
-        
-def setup_fptree(df, min_support, cm):
-    num_itemsets = len(df.index)        # number of itemsets in the database
+
+
+def setup_fptree(df, min_support, df_targets):
+    num_itemsets = len(df.index)  # number of itemsets in the database
 
     is_sparse = False
     if hasattr(df, "sparse"):
@@ -30,7 +33,7 @@ def setup_fptree(df, min_support, cm):
     # if itemsets is sparse, np.sum returns an np.matrix of shape (1, N)
     item_support = np.array(np.sum(itemsets, axis=0) / float(num_itemsets))
     item_support = item_support.reshape(-1)
-    
+
     items = np.nonzero(item_support >= min_support)[0]
 
     # Define ordering on items for inserting into FPTree
@@ -44,7 +47,7 @@ def setup_fptree(df, min_support, cm):
     # Building tree by inserting itemsets in sorted order
     # Heuristic for reducing tree size is inserting in order
     #   of most frequent to least frequent
-    tree = FPTree(rank)
+    tree = FPTree(rank, trgs_root=np.zeros_like(df_targets[0]))
     for i in range(num_itemsets):
         if is_sparse:
             # itemsets has been converted to CSR format to speed-up the line
@@ -54,35 +57,40 @@ def setup_fptree(df, min_support, cm):
             #    elements, shape(#nnz,)
             #  - itemsets.indptr[i] contains the offset in itemset.indices of
             #    the first non null element in row i, shape(1+#nrows,)
-            nonnull = itemsets.indices[itemsets.indptr[i]:itemsets.indptr[i+1]]
+            nonnull = itemsets.indices[itemsets.indptr[i] : itemsets.indptr[i + 1]]
         else:
             nonnull = np.where(itemsets[i, :])[0]
         itemset = [item for item in nonnull if item in rank]
         itemset.sort(key=rank.get, reverse=True)
-        tree.insert_itemset(itemset, cm_i=cm[i].copy())
+
+        tree.insert_itemset(itemset, trgs_i=df_targets[i].copy())
 
     return tree, rank
 
 
-def generate_itemsets(generator, num_itemsets, colname_map, cols_orderTP=["tn", "fp", "fn", "tp"] ):
+def generate_itemsets(
+    generator, num_itemsets, colname_map, cols_orderTP=["tn", "fp", "fn", "tp"]
+):
     itemsets = []
     supports = []
-    c1,c2,c3,c4=[],[],[],[]
+    c_dict = {}
+    for i_c_dict in range(0, len(cols_orderTP)):
+        c_dict[i_c_dict] = []
     for sup, iset, cf_final in generator:
         itemsets.append(frozenset(iset))
         supports.append(sup / num_itemsets)
-        c1.append(cf_final[0])
-        c2.append(cf_final[1])
-        c3.append(cf_final[2])
-        c4.append(cf_final[3])
-        
+        for i_c_dict in range(0, len(cols_orderTP)):
+            c_dict[i_c_dict].append(cf_final[i_c_dict])
 
-    res_df = pd.DataFrame({'support': supports, 'itemsets': itemsets,\
-                           cols_orderTP[0]:c1, cols_orderTP[1]:c2, cols_orderTP[2]:c3, cols_orderTP[3]:c4})
+    res_dic = {"support": supports, "itemsets": itemsets}
+
+    res_dic.update({cols_orderTP[i]: c_dict[i] for i in c_dict})
+    res_df = pd.DataFrame(res_dic)
 
     if colname_map is not None:
-        res_df['itemsets'] = res_df['itemsets'] \
-            .apply(lambda x: frozenset([colname_map[i] for i in x]))
+        res_df["itemsets"] = res_df["itemsets"].apply(
+            lambda x: frozenset([colname_map[i] for i in x])
+        )
 
     return res_df
 
@@ -90,24 +98,28 @@ def generate_itemsets(generator, num_itemsets, colname_map, cols_orderTP=["tn", 
 def valid_input_check(df):
 
     if f"{type(df)}" == "<class 'pandas.core.frame.SparseDataFrame'>":
-        msg = ("SparseDataFrame support has been deprecated in pandas 1.0,"
-               " and is no longer supported in mlxtend. "
-               " Please"
-               " see the pandas migration guide at"
-               " https://pandas.pydata.org/pandas-docs/"
-               "stable/user_guide/sparse.html#sparse-data-structures"
-               " for supporting sparse data in DataFrames.")
+        msg = (
+            "SparseDataFrame support has been deprecated in pandas 1.0,"
+            " and is no longer supported in mlxtend. "
+            " Please"
+            " see the pandas migration guide at"
+            " https://pandas.pydata.org/pandas-docs/"
+            "stable/user_guide/sparse.html#sparse-data-structures"
+            " for supporting sparse data in DataFrames."
+        )
         raise TypeError(msg)
 
     if df.size == 0:
         return
     if hasattr(df, "sparse"):
         if not isinstance(df.columns[0], str) and df.columns[0] != 0:
-            raise ValueError('Due to current limitations in Pandas, '
-                             'if the sparse format has integer column names,'
-                             'names, please make sure they either start '
-                             'with `0` or cast them as string column names: '
-                             '`df.columns = [str(i) for i in df.columns`].')
+            raise ValueError(
+                "Due to current limitations in Pandas, "
+                "if the sparse format has integer column names,"
+                "names, please make sure they either start "
+                "with `0` or cast them as string column names: "
+                "`df.columns = [str(i) for i in df.columns`]."
+            )
 
     # Fast path: if all columns are boolean, there is nothing to checks
     all_bools = df.dtypes.apply(pd.api.types.is_bool_dtype).all()
@@ -124,17 +136,20 @@ def valid_input_check(df):
         if len(idxs[0]) > 0:
             # idxs has 1 dimension with sparse data and 2 with dense data
             val = values[tuple(loc[0] for loc in idxs)]
-            s = ('The allowed values for a DataFrame'
-                 ' are True, False, 0, 1. Found value %s' % (val))
+            s = (
+                "The allowed values for a DataFrame"
+                " are True, False, 0, 1. Found value %s" % (val)
+            )
             raise ValueError(s)
 
 
 class FPTree(object):
-    def __init__(self, rank=None):
-        self.root = FPNode_CM(None)
+    def __init__(self, rank=None, trgs_root=None):
+        self.root = FPNode_CM(None, target_matrix=trgs_root)
         self.nodes = collections.defaultdict(list)
         self.cond_items = []
         self.rank = rank
+        self.root_trgs_root = trgs_root
 
     def conditional_tree(self, cond_item, minsup):
         """
@@ -152,13 +167,12 @@ class FPTree(object):
         # Find all path from root node to nodes for item
         branches = []
         count = collections.defaultdict(int)
-        cm_dict=collections.defaultdict(int)
+
         for node in self.nodes[cond_item]:
             branch = node.itempath_from_root()
             branches.append(branch)
             for item in branch:
                 count[item] += node.count
-                cm_dict[item]+=node.confusion_matrix.copy()
 
         # Define new ordering or deep trees may have combinatorially explosion
         items = [item for item in count if count[item] >= minsup]
@@ -166,16 +180,22 @@ class FPTree(object):
         rank = {item: i for i, item in enumerate(items)}
 
         # Create conditional tree
-        cond_tree = FPTree(rank)
+        cond_tree = FPTree(rank, trgs_root=np.zeros_like(self.root_trgs_root))
         for idx, branch in enumerate(branches):
-            branch = sorted([i for i in branch if i in rank],
-                            key=rank.get, reverse=True)
-            cond_tree.insert_itemset(branch, self.nodes[cond_item][idx].count, cm_i=self.nodes[cond_item][idx].confusion_matrix.copy())
+            branch = sorted(
+                [i for i in branch if i in rank], key=rank.get, reverse=True
+            )
+
+            cond_tree.insert_itemset(
+                branch,
+                self.nodes[cond_item][idx].count,
+                trgs_i=self.nodes[cond_item][idx].target_matrix.copy(),
+            )
         cond_tree.cond_items = self.cond_items + [cond_item]
 
         return cond_tree
 
-    def insert_itemset(self, itemset, count=1, cm_i=None):
+    def insert_itemset(self, itemset, count=1, trgs_i=None):
         """
         Inserts a list of items into the tree.
         Parameters
@@ -185,8 +205,9 @@ class FPTree(object):
         count : int
             The number of occurrences of the itemset.
         """
+
         self.root.count += count
-        self.root.confusion_matrix += cm_i
+        self.root.target_matrix += trgs_i
 
         if len(itemset) == 0:
             return
@@ -196,9 +217,9 @@ class FPTree(object):
         node = self.root
         for item in itemset:
             if item in node.children:
-                child = node.children[item]                
+                child = node.children[item]
                 child.count += count
-                child.confusion_matrix+=cm_i.copy()
+                child.target_matrix += trgs_i.copy()
                 node = child
                 index += 1
             else:
@@ -206,7 +227,7 @@ class FPTree(object):
 
         # Insert any remaining items
         for item in itemset[index:]:
-            child_node = FPNode_CM(item, count, node, confusion_matrix=cm_i.copy())
+            child_node = FPNode_CM(item, count, node, target_matrix=trgs_i.copy())
             self.nodes[item].append(child_node)
             node = child_node
 
@@ -223,25 +244,26 @@ class FPTree(object):
         if colnames:
             cond_items = [str(colnames[i]) for i in self.cond_items]
         cond_items = ", ".join(cond_items)
-        print('\r%d itemset(s) from tree conditioned on items (%s)' %
-              (count, cond_items), end="\n")
+        print(
+            "\r%d itemset(s) from tree conditioned on items (%s)" % (count, cond_items),
+            end="\n",
+        )
 
 
 class FPNode_CM(object):
-    def __init__(self, item, count=0, parent=None, confusion_matrix=[0,0,0,0]):
+    def __init__(self, item, count=0, parent=None, target_matrix=None):
         self.item = item
         self.count = count
         self.parent = parent
         self.children = collections.defaultdict(FPNode_CM)
-        self.confusion_matrix=confusion_matrix.copy()
+        self.target_matrix = np.array(target_matrix)  # target_matrix.copy()
 
-        
         if parent is not None:
             parent.children[item] = self
 
     def itempath_from_root(self):
-        """ Returns the top-down sequence of items from self to
-            (but not including) the root node. """
+        """Returns the top-down sequence of items from self to
+        (but not including) the root node."""
         path = []
         if self.item is None:
             return path
@@ -264,7 +286,15 @@ import math
 import itertools
 
 
-def fpgrowth_cm(df, cm, min_support=0.5, use_colnames=False, max_len=None, verbose=0, cols_orderTP=["tn", "fp", "fn", "tp"]):
+def fpgrowth_cm(
+    df,
+    df_targets,
+    min_support=0.5,
+    use_colnames=False,
+    max_len=None,
+    verbose=0,
+    cols_orderTP=["tn", "fp", "fn", "tp"],
+):
     """Get frequent itemsets from a one-hot DataFrame
     Parameters
     -----------
@@ -317,20 +347,24 @@ def fpgrowth_cm(df, cm, min_support=0.5, use_colnames=False, max_len=None, verbo
     """
     valid_input_check(df)
 
-    if min_support <= 0.:
-        raise ValueError('`min_support` must be a positive '
-                         'number within the interval `(0, 1]`. '
-                         'Got %s.' % min_support)
-    cm=cm.values.copy()
+    if min_support <= 0.0:
+        raise ValueError(
+            "`min_support` must be a positive "
+            "number within the interval `(0, 1]`. "
+            "Got %s." % min_support
+        )
+    df_targets = df_targets.values.copy()
     colname_map = None
     if use_colnames:
         colname_map = {idx: item for idx, item in enumerate(df.columns)}
 
-    tree, _ = setup_fptree(df, min_support, cm)
+    tree, _ = setup_fptree(df, min_support, df_targets)
     minsup = math.ceil(min_support * len(df.index))  # min support as count
     generator = fpg_step(tree, minsup, colname_map, max_len, verbose)
 
-    return generate_itemsets(generator, len(df.index), colname_map, cols_orderTP=cols_orderTP)
+    return generate_itemsets(
+        generator, len(df.index), colname_map, cols_orderTP=cols_orderTP
+    )
 
 
 def fpg_step(tree, minsup, colnames, max_len, verbose):
@@ -357,16 +391,17 @@ def fpg_step(tree, minsup, colnames, max_len, verbose):
         for i in range(1, size_remain):
             for itemset in itertools.combinations(items, i):
                 count += 1
-                supports_t={i:tree.nodes[i][0].count for i in itemset}
+                supports_t = {i: tree.nodes[i][0].count for i in itemset}
                 from operator import itemgetter
-                id_min,support=min(supports_t.items(), key=itemgetter(1))
-                cf_y = tree.nodes[id_min][0].confusion_matrix                
+
+                id_min, support = min(supports_t.items(), key=itemgetter(1))
+                cf_y = tree.nodes[id_min][0].target_matrix
                 yield support, tree.cond_items + list(itemset), cf_y
     elif not max_len or max_len > len(tree.cond_items):
         for item in items:
             count += 1
             support = sum([node.count for node in tree.nodes[item]])
-            cf_y = sum([node.confusion_matrix for node in tree.nodes[item]])
+            cf_y = sum([node.target_matrix for node in tree.nodes[item]])
             yield support, tree.cond_items + [item], cf_y
 
     if verbose:
@@ -376,7 +411,8 @@ def fpg_step(tree, minsup, colnames, max_len, verbose):
     if not tree.is_path() and (not max_len or max_len > len(tree.cond_items)):
         for item in items:
             cond_tree = tree.conditional_tree(item, minsup)
-            
-            for sup, iset, cf_y in fpg_step(cond_tree, minsup,
-                                      colnames, max_len, verbose):
+
+            for sup, iset, cf_y in fpg_step(
+                cond_tree, minsup, colnames, max_len, verbose
+            ):
                 yield sup, iset, cf_y
