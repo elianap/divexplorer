@@ -41,7 +41,7 @@ from divexplorer.FP_Divergence import FP_Divergence
 # Input: a discretized dataframe with the true class and the predicted class. 
 # We specify their column names in the dataframe
 # The class_map is a dictionary to specify the positive and the negative class (e.g. {"P":1, "N":0})
-fp_diver=FP_DivergenceExplorer(df_discretized, "class", "predicted", class_map=class_map)
+fp_diver=FP_DivergenceExplorer(df_discretized, true_class_name = "class", predicted_class_name = "predicted", class_map=class_map)
 
 
 #Extract frequent patterns (FP) and compute divergence
@@ -123,7 +123,7 @@ Note that the evaluation can be perform the analysis of the divergence of a sing
 
 ```python
 min_sup=0.1
-fp_diver_1class=FP_DivergenceExplorer(X_discretized.drop(columns="predicted"),"class", class_map=class_map)
+fp_diver_1class=FP_DivergenceExplorer(X_discretized.drop(columns="predicted"),true_class_name="class", class_map=class_map)
 # For example, we analyze the positive rate divergenxe
 FP_fm_1class=fp_diver_1class.getFrequentPatternDivergence(min_support=min_sup, metrics=["d_posr", "d_negr"])
 
