@@ -25,6 +25,9 @@ map_beta_distribution = {
     "d_npv": {"T": ["tn"], "F": ["fn"]},
     "d_fdr": {"T": ["fp"], "F": ["tp"]},
     "d_for": {"T": ["fn"], "F": ["tn"]},
+    "d_precision": {"T": ["tp"], "F": ["fp"]},
+    "d_recall": {"T": ["tp"], "F": ["fn"]},
+    "d_f1": {"T": ["tp", "tp"], "F": ["fp", "fn"]}
 }
 
 
@@ -485,6 +488,9 @@ class FP_DivergenceExplorer:
             classification_error_df,
             true_positive_rate_df,
             true_negative_rate_df,
+            precision_df,
+            recall_df,
+            f1_score_df
         )
 
         name_funct = {
@@ -494,6 +500,9 @@ class FP_DivergenceExplorer:
             "error": classification_error_df,
             "tpr": true_positive_rate_df,
             "tnr": true_negative_rate_df,
+            "precision": precision_df,
+            "recall": recall_df,
+            "f1": f1_score_df,
         }
 
         # "ppv": positive_predicted_value_df

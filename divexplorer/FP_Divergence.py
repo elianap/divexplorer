@@ -83,6 +83,10 @@ map_beta_distribution = {
     "d_npv": {"T": ["tn"], "F": ["fn"]},
     "d_fdr": {"T": ["fp"], "F": ["tp"]},
     "d_for": {"T": ["fn"], "F": ["tn"]},
+    "d_precision": {"T": ["tp"], "F": ["fp"]},
+    "d_recall": {"T": ["tp"], "F": ["fn"]},
+    "d_f1": {"T": ["tp", "tp"], "F": ["fp", "fn"]}
+
 }
 
 VIZ_COL_NAME = "viz"
